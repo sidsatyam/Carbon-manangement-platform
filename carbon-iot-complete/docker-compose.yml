@@ -1,0 +1,87 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:14
+    container_name: carbon_db
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - carbon_network
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: carbon_pgadmin
+    restart: always
+    env_file:
+      - .env
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    networks:
+      - carbon_network
+
+  api:
+    build: ./device-service
+    container_name: carbon_iot_service
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - AUTH_SECRET=${AUTH_SECRET}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./device-service:/app:cached
+    networks:
+      - carbon_network
+
+  session:
+    build: ./session-service
+    container_name: carbon_session_service
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=db
+    ports:
+      - "8010:8010"
+    networks:
+      - carbon_network
+
+  simulator:
+    build: ./simulator
+    container_name: carbon_simulator
+    restart: "no"
+    depends_on:
+      - api
+    env_file:
+      - .env
+    networks:
+      - carbon_network
+
+volumes:
+  postgres_data:
+
+networks:
+  carbon_network:
+    driver: bridge

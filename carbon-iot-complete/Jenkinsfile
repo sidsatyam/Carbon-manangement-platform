@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+
+    environment {
+        APP_NAME = "carbon-iot-service"
+        VERSION = "1.0.${BUILD_NUMBER}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Setup') {
+            steps {
+                sh 'python3 -m venv .venv || true'
+                sh '. .venv/bin/activate && pip install --upgrade pip setuptools wheel && pip install -r device-service/requirements.txt'
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                sh '. .venv/bin/activate && pytest device-service/tests -q'
+            }
+            post {
+                always {
+                    junit 'device-service/tests/*.xml'
+                }
+            }
+        }
+
+        stage('Integration Tests') {
+            steps {
+                sh '. .venv/bin/activate && pytest device-service/tests/test_integration_api.py -q'
+            }
+        }
+
+        stage('Build Images') {
+            steps {
+                sh 'docker compose build --no-cache'
+            }
+        }
+
+        stage('Package RPM') {
+            steps {
+                sh 'tar czf ${APP_NAME}-${VERSION}.tar.gz device-service && mkdir -p rpmbuild/SOURCES && mv ${APP_NAME}-${VERSION}.tar.gz rpmbuild/SOURCES/ || true'
+                sh 'mkdir -p rpmbuild/SPECS && cp rpm/carbon-iot-service.spec rpmbuild/SPECS/ || true'
+                sh 'rpmbuild -bb --define "_topdir `pwd`/rpmbuild" rpmbuild/SPECS/carbon-iot-service.spec || true'
+            }
+        }
+
+        stage('Deploy (manual step)') {
+            steps {
+                echo 'RPM artifact available in rpmbuild/RPMS or package gz. Deploy to target as needed.'
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
